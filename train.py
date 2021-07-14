@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from collections import OrderedDict, defaultdict
 
 from ptb import PTB
+from books import Books
 from utils import to_var, idx2word, expierment_name
 from model import SentenceVAE
 
@@ -20,14 +21,24 @@ def main(args):
     splits = ['train', 'valid'] + (['test'] if args.test else [])
 
     datasets = OrderedDict()
-    for split in splits:
-        datasets[split] = PTB(
-            data_dir=args.data_dir,
-            split=split,
-            create_data=args.create_data,
-            max_sequence_length=args.max_sequence_length,
-            min_occ=args.min_occ
-        )
+    if args.corpus == 'ptb':
+        for split in splits:
+            datasets[split] = PTB(
+                data_dir=args.data_dir,
+                split=split,
+                create_data=args.create_data,
+                max_sequence_length=args.max_sequence_length,
+                min_occ=args.min_occ
+            )
+    elif args.corpus == 'books':
+        for split in splits:
+            datasets[split] = Books(
+                data_dir=args.data_dir,
+                split=split,
+                create_data=args.create_data,
+                max_sequence_length=args.max_sequence_length,
+                min_occ=args.min_occ
+            )
 
     params = dict(
         vocab_size=datasets['train'].vocab_size,
@@ -209,11 +220,14 @@ if __name__ == '__main__':
     parser.add_argument('-log', '--logdir', type=str, default='logs')
     parser.add_argument('-bin', '--save_model_path', type=str, default='bin')
 
+    parser.add_argument('-c', '--corpus', type=str, default='ptb')
+
     args = parser.parse_args()
 
     args.rnn_type = args.rnn_type.lower()
     args.anneal_function = args.anneal_function.lower()
 
+    assert args.corpus in ['ptb', 'books']
     assert args.rnn_type in ['rnn', 'lstm', 'gru']
     assert args.anneal_function in ['logistic', 'linear']
     assert 0 <= args.word_dropout <= 1
