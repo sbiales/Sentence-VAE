@@ -15,7 +15,7 @@ from model import SentenceVAE
 
 
 def main(args):
-    ts = time.strftime('%Y-%b-%d-%H:%M:%S', time.gmtime())
+    ts = time.strftime('%Y-%b-%d-%H_%M_%S', time.gmtime())
 
     splits = ['train', 'valid'] + (['test'] if args.test else [])
 
@@ -116,7 +116,7 @@ def main(args):
 
                 for k, v in batch.items():
                     if torch.is_tensor(v):
-                        batch[k] = to_var(v)
+                        batch[k] = to_var(v).long()
 
                 # Forward pass
                 logp, mean, logv, z = model(batch['input'], batch['length'])
