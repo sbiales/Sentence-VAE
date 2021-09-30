@@ -2,6 +2,7 @@ import os
 import io
 import json
 import torch
+from datetime import datetime
 import numpy as np
 from collections import defaultdict
 from torch.utils.data import Dataset
@@ -109,7 +110,7 @@ class Books(Dataset):
 
     def _create_data(self):
 
-        if self.split == 'train':
+        if self.split == 'train' and not os.path.exists(os.path.join(self.data_dir, self.vocab_file)):
             self._create_vocab()
         else:
             self._load_vocab()
@@ -145,7 +146,10 @@ class Books(Dataset):
                 data[id]['input'] = input
                 data[id]['target'] = target
                 data[id]['length'] = length
+                if i % 1000000 == 0:
+                    print(i)
 
+        print('Creating JSON file')
         with io.open(os.path.join(self.data_dir, self.data_file), 'wb') as data_file:
             data = json.dumps(data, ensure_ascii=False)
             data_file.write(data.encode('utf8', 'replace'))
@@ -155,6 +159,9 @@ class Books(Dataset):
     def _create_vocab(self):
 
         assert self.split == 'train', "Vocabulary can only be created for training file."
+
+        start = datetime.now()
+        print("Starting to create vocabulary at", start.strftime("%d/%m/%Y %H:%M:%S"))
 
         tokenizer = TweetTokenizer(preserve_case=False)
 
@@ -184,6 +191,15 @@ class Books(Dataset):
         assert len(w2i) == len(i2w)
 
         print("Vocabulary of %i keys created." %len(w2i))
+        end = datetime.now()
+        print("Completed at", end.strftime("%d/%m/%Y %H:%M:%S"))
+        duration = end - start
+        duration_in_s = duration.total_seconds()
+        days    = divmod(duration_in_s, 86400)        # Get days (without [0]!)
+        hours   = divmod(days[1], 3600)               # Use remainder of days to calc hours
+        minutes = divmod(hours[1], 60)                # Use remainder of hours to calc minutes
+        seconds = divmod(minutes[1], 1)               # Use remainder of minutes to calc seconds
+        print("Time between dates: %d days, %d hours, %d minutes and %d seconds" % (days[0], hours[0], minutes[0], seconds[0]))
 
         vocab = dict(w2i=w2i, i2w=i2w)
         with io.open(os.path.join(self.data_dir, self.vocab_file), 'wb') as vocab_file:

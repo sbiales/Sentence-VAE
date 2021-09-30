@@ -32,8 +32,8 @@ class SentenceVAE(nn.Module):
             rnn = nn.RNN
         elif rnn_type == 'gru':
             rnn = nn.GRU
-        # elif rnn_type == 'lstm':
-        #     rnn = nn.LSTM
+        elif rnn_type == 'lstm':
+            rnn = nn.LSTM
         else:
             raise ValueError()
 

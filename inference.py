@@ -8,7 +8,7 @@ from utils import to_var, idx2word, interpolate
 
 
 def main(args):
-    with open(args.data_dir+'/ptb.vocab.json', 'r') as file:
+    with open(args.data_dir + '/' + args.corpus + '.vocab.json', 'r') as file:
         vocab = json.load(file)
 
     w2i, i2w = vocab['w2i'], vocab['i2w']
@@ -69,11 +69,13 @@ if __name__ == '__main__':
     parser.add_argument('-ls', '--latent_size', type=int, default=16)
     parser.add_argument('-nl', '--num_layers', type=int, default=1)
     parser.add_argument('-bi', '--bidirectional', action='store_true')
+    parser.add_argument('-cp', '--corpus', type=str, default='ptb')
 
     args = parser.parse_args()
 
     args.rnn_type = args.rnn_type.lower()
 
+    assert args.corpus in ['ptb', 'books']
     assert args.rnn_type in ['rnn', 'lstm', 'gru']
     assert 0 <= args.word_dropout <= 1
 
