@@ -8,6 +8,7 @@ from multiprocessing import cpu_count
 from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from collections import OrderedDict, defaultdict
+from tqdm import tqdm
 
 from ptb import PTB
 from books import Books
@@ -57,6 +58,7 @@ def main(args):
         bidirectional=args.bidirectional
     )
     model = SentenceVAE(**params)
+    print("Cuda is available:", torch.cuda.is_available())
 
     if torch.cuda.is_available():
         model = model.cuda()

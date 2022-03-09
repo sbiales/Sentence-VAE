@@ -8,6 +8,7 @@ from collections import defaultdict
 from torch.utils.data import Dataset
 from nltk.tokenize import TweetTokenizer
 from datasets import load_dataset
+from tqdm import tqdm
 
 from utils import OrderedCounter
 
@@ -77,6 +78,7 @@ class Books(Dataset):
 
 
     def _load_data(self, vocab=True):
+        print("Loading %s JSON data file"%(self.split.upper()))
 
         with open(os.path.join(self.data_dir, self.data_file), 'r') as file:
             self.data = json.load(file)
@@ -108,6 +110,29 @@ class Books(Dataset):
             #         split = json.dumps(corpus[s], ensure_ascii=False)
             #         data_file.write(split.encode('utf8', 'replace'))
 
+    def _read_raw_file(self, file_handler):
+        tokenizer = TweetTokenizer(preserve_case=False)
+        for i, line in enumerate(file_handler):
+            words = tokenizer.tokenize(line)
+
+            input = ['<sos>'] + words
+            input = input[:self.max_sequence_length]
+
+            target = words[:self.max_sequence_length-1]
+            target = target + ['<eos>']
+
+            assert len(input) == len(target), "%i, %i"%(len(input), len(target))
+            length = len(input)
+
+            input.extend(['<pad>'] * (self.max_sequence_length-length))
+            target.extend(['<pad>'] * (self.max_sequence_length-length))
+
+            input = [self.w2i.get(w, self.w2i['<unk>']) for w in input]
+            target = [self.w2i.get(w, self.w2i['<unk>']) for w in target]
+
+            item_dict = {'input': input, 'target': target, 'length': length}
+            yield i, item_dict
+
     def _create_data(self):
 
         if self.split == 'train' and not os.path.exists(os.path.join(self.data_dir, self.vocab_file)):
@@ -115,44 +140,27 @@ class Books(Dataset):
         else:
             self._load_vocab()
 
-        tokenizer = TweetTokenizer(preserve_case=False)
-
         data = defaultdict(dict)
 
         if not os.path.exists(self.raw_data_path):
             self._create_raw_files()
 
         with open(self.raw_data_path, 'r') as file:
-            for i, line in enumerate(file):
+            with io.open(os.path.join(self.data_dir, self.data_file), 'w') as data_file:
+                gen = self._read_raw_file(file)
+                print('Creating JSON file')
+                data_file.write('{'.rstrip('\n'))
+                fid, fline = next(gen)
+                data = '"' + str(fid) + '": ' + json.dumps(fline, ensure_ascii=False)
+                data_file.write(data.rstrip('\n'))
+                for id, line in tqdm(gen):
+                    data = ', "' + str(id) + '": ' + json.dumps(line, ensure_ascii=False)
+                    data_file.write(data.rstrip('\n'))                
+                data_file.write('}')
 
-                words = tokenizer.tokenize(line)
-
-                input = ['<sos>'] + words
-                input = input[:self.max_sequence_length]
-
-                target = words[:self.max_sequence_length-1]
-                target = target + ['<eos>']
-
-                assert len(input) == len(target), "%i, %i"%(len(input), len(target))
-                length = len(input)
-
-                input.extend(['<pad>'] * (self.max_sequence_length-length))
-                target.extend(['<pad>'] * (self.max_sequence_length-length))
-
-                input = [self.w2i.get(w, self.w2i['<unk>']) for w in input]
-                target = [self.w2i.get(w, self.w2i['<unk>']) for w in target]
-
-                id = len(data)
-                data[id]['input'] = input
-                data[id]['target'] = target
-                data[id]['length'] = length
-                if i % 1000000 == 0:
-                    print(i)
-
-        print('Creating JSON file')
-        with io.open(os.path.join(self.data_dir, self.data_file), 'wb') as data_file:
-            data = json.dumps(data, ensure_ascii=False)
-            data_file.write(data.encode('utf8', 'replace'))
+        # with io.open(os.path.join(self.data_dir, self.data_file), 'wb') as data_file:
+        #     data = json.dumps(data, ensure_ascii=False)
+        #     data_file.write(data.encode('utf8', 'replace'))
 
         self._load_data(vocab=False)
 
@@ -160,8 +168,7 @@ class Books(Dataset):
 
         assert self.split == 'train', "Vocabulary can only be created for training file."
 
-        start = datetime.now()
-        print("Starting to create vocabulary at", start.strftime("%d/%m/%Y %H:%M:%S"))
+        print("Creating vocabulary file")
 
         tokenizer = TweetTokenizer(preserve_case=False)
 
@@ -179,7 +186,7 @@ class Books(Dataset):
         
         with open(self.raw_data_path, 'r') as file:
 
-            for i, line in enumerate(file):
+            for i, line in tqdm(enumerate(file)):
                 words = tokenizer.tokenize(line)
                 w2c.update(words)
 
@@ -191,16 +198,6 @@ class Books(Dataset):
         assert len(w2i) == len(i2w)
 
         print("Vocabulary of %i keys created." %len(w2i))
-        end = datetime.now()
-        print("Completed at", end.strftime("%d/%m/%Y %H:%M:%S"))
-        duration = end - start
-        duration_in_s = duration.total_seconds()
-        days    = divmod(duration_in_s, 86400)        # Get days (without [0]!)
-        hours   = divmod(days[1], 3600)               # Use remainder of days to calc hours
-        minutes = divmod(hours[1], 60)                # Use remainder of hours to calc minutes
-        seconds = divmod(minutes[1], 1)               # Use remainder of minutes to calc seconds
-        print("Time between dates: %d days, %d hours, %d minutes and %d seconds" % (days[0], hours[0], minutes[0], seconds[0]))
-
         vocab = dict(w2i=w2i, i2w=i2w)
         with io.open(os.path.join(self.data_dir, self.vocab_file), 'wb') as vocab_file:
             data = json.dumps(vocab, ensure_ascii=False)
