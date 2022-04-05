@@ -27,6 +27,7 @@ class SentenceVAE(nn.Module):
         self.embedding = nn.Embedding(vocab_size, embedding_size)
         self.word_dropout_rate = word_dropout
         self.embedding_dropout = nn.Dropout(p=embedding_dropout)
+        self.rnn_type = rnn_type
 
         if rnn_type == 'rnn':
             rnn = nn.RNN
@@ -42,6 +43,7 @@ class SentenceVAE(nn.Module):
         self.decoder_rnn = rnn(embedding_size, hidden_size, num_layers=num_layers, bidirectional=self.bidirectional,
                                batch_first=True)
 
+        # If we have bidirectional, we concatenate the outputs into the final hidden layer
         self.hidden_factor = (2 if bidirectional else 1) * num_layers
 
         self.hidden2mean = nn.Linear(hidden_size * self.hidden_factor, latent_size)
@@ -60,12 +62,20 @@ class SentenceVAE(nn.Module):
 
         packed_input = rnn_utils.pack_padded_sequence(input_embedding, sorted_lengths.data.tolist(), batch_first=True)
 
-        _, hidden = self.encoder_rnn(packed_input)
+        if self.rnn_type == 'lstm':
+            # hidden/cell: hidden_factor X batch_size X hidden_size
+            h_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+            c_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+            _, (hidden, cell) = self.encoder_rnn(packed_input, (h_init, c_init))
+        else:
+            _, hidden = self.encoder_rnn(packed_input)
 
         if self.bidirectional or self.num_layers > 1:
             # flatten hidden state
             hidden = hidden.view(batch_size, self.hidden_size*self.hidden_factor)
+            # torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1)
         else:
+            # gets rid of dimensions if it's 1 (only when not bidirectional)
             hidden = hidden.squeeze()
 
         # REPARAMETERIZATION
@@ -73,6 +83,7 @@ class SentenceVAE(nn.Module):
         logv = self.hidden2logv(hidden)
         std = torch.exp(0.5 * logv)
 
+        # Retrieve a sample from the distribution
         z = to_var(torch.randn([batch_size, self.latent_size]))
         z = z * std + mean
 
@@ -99,7 +110,11 @@ class SentenceVAE(nn.Module):
         packed_input = rnn_utils.pack_padded_sequence(input_embedding, sorted_lengths.data.tolist(), batch_first=True)
 
         # decoder forward pass
-        outputs, _ = self.decoder_rnn(packed_input, hidden)
+        if self.rnn_type == 'lstm':
+            c_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+            outputs, _ = self.decoder_rnn(packed_input, (hidden, c_init))
+        else:
+            outputs, _ = self.decoder_rnn(packed_input, hidden)
 
         # process outputs
         padded_outputs = rnn_utils.pad_packed_sequence(outputs, batch_first=True)[0]
@@ -150,7 +165,11 @@ class SentenceVAE(nn.Module):
 
             input_embedding = self.embedding(input_sequence)
 
-            output, hidden = self.decoder_rnn(input_embedding, hidden)
+            if self.rnn_type == 'lstm':
+                c_init = to_var(torch.zeros(self.num_layers, len(running_seqs), self.hidden_size))
+                output, (hidden, _) = self.decoder_rnn(input_embedding, (hidden, c_init))
+            else:
+                output, hidden = self.decoder_rnn(input_embedding, hidden) # BREAKS FOR LSTM
 
             logits = self.outputs2vocab(output)
 
