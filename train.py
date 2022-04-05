@@ -9,6 +9,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from collections import OrderedDict, defaultdict
 from tqdm import tqdm
+import wandb
 
 from ptb import PTB
 from books import Books
@@ -17,6 +18,9 @@ from model import SentenceVAE
 
 
 def main(args):
+    wandb.init(project="svae", entity="sbiales")
+    wandb.init(config=args)
+
     ts = time.strftime('%Y-%b-%d-%H_%M_%S', time.gmtime())
 
     splits = ['train', 'valid'] + (['test'] if args.test else [])
@@ -139,6 +143,22 @@ def main(args):
                     batch['length'], mean, logv, args.anneal_function, step, args.k, args.x0)
 
                 loss = (NLL_loss + KL_weight * KL_loss) / batch_size
+                if split == 'train':
+                    wandb.log({
+                        "loss": loss,
+                        "NLL_loss": NLL_loss,
+                        "KL_loss": KL_loss,
+                        "KL_weight": KL_weight,
+                        "ELBO": loss.data.view(1, -1)
+                    })
+                elif split == 'valid':
+                    wandb.log({
+                        "val_loss": loss,
+                        "val_NLL_loss": NLL_loss,
+                        "val_KL_loss": KL_loss,
+                        "val_KL_weight": KL_weight,
+                        "val_ELBO": loss.data.view(1, -1)
+                    })
 
                 # backward + optimization
                 if split == 'train':
@@ -210,10 +230,10 @@ if __name__ == '__main__':
     parser.add_argument('-nl', '--num_layers', type=int, default=1)
     parser.add_argument('-bi', '--bidirectional', action='store_true')
     parser.add_argument('-ls', '--latent_size', type=int, default=16)
-    parser.add_argument('-wd', '--word_dropout', type=float, default=0)
-    parser.add_argument('-ed', '--embedding_dropout', type=float, default=0.5)
+    parser.add_argument('-wd', '--word_dropout', type=float, default=.25) # varied in the paper
+    parser.add_argument('-ed', '--embedding_dropout', type=float, default=0) # did not help the model learn to use the latent variable
 
-    parser.add_argument('-af', '--anneal_function', type=str, default='logistic')
+    parser.add_argument('-af', '--anneal_function', type=str, default='logistic') # Like figure 2 in the paper
     parser.add_argument('-k', '--k', type=float, default=0.0025)
     parser.add_argument('-x0', '--x0', type=int, default=2500)
 
