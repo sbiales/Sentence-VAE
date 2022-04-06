@@ -4,7 +4,7 @@ import torch
 import argparse
 
 from model import SentenceVAE
-from utils import to_var, idx2word, interpolate
+from utils import to_var, idx2word, interpolate, tokenize
 
 
 def main(args):
@@ -41,7 +41,7 @@ def main(args):
     
     model.eval()
 
-    samples, z = model.inference(n=args.num_samples)
+    '''samples, z = model.inference(n=args.num_samples)
     print('----------SAMPLES----------')
     print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
 
@@ -50,7 +50,44 @@ def main(args):
     z = to_var(torch.from_numpy(interpolate(start=z1, end=z2, steps=8)).float())
     samples, _ = model.inference(z=z)
     print('-------INTERPOLATION-------')
-    print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
+    print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')'''
+
+    # Test with the examples given by Table 7 in the paper
+    texts = ['we looked out at the setting sun.', 'i went to the kitchen.', 'how are you doing?']
+    input_sequence = {
+        'input': [],
+        'length': []
+    }
+
+    # Arrange the text tokenizations and lengths
+    for text in texts:
+        tokenized = tokenize(text, w2i, args.max_sequence_length)
+        input_sequence['input'].append(tokenized)
+        input_sequence['length'].append(len(tokenized))
+
+    input_sequence['input'] = to_var(torch.tensor(input_sequence['input']))
+    input_sequence['length'] = to_var(torch.tensor(input_sequence['length']))
+
+    mean, std = model.encode(input_sequence['input'], input_sequence['length'])
+
+    mean_z = to_var(torch.zeros([len(texts), args.latent_size]))
+    mean_z = mean_z * std + mean
+    mean_samples, _ = model.inference(n=1, z=mean_z)
+
+    z = to_var(torch.randn([len(texts), args.latent_size]))
+    z = z * std + mean
+
+    samples, _ = model.inference(n=args.num_samples, z=z)
+
+    print(mean_samples[1, :].unsqueeze(0).shape)
+    print(samples.shape)
+    print('----------SAMPLES----------')
+    for i in range(len(texts)):
+        print('Input:', texts[i])
+        print('Mean: ', *idx2word(mean_samples[i, :].unsqueeze(0), i2w=i2w, pad_idx=w2i['<pad>']))
+        print('Samples:', *idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
+        print()
+
 
 
 if __name__ == '__main__':

@@ -66,7 +66,7 @@ class SentenceVAE(nn.Module):
             # hidden/cell: hidden_factor X batch_size X hidden_size
             h_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
             c_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
-            _, (hidden, cell) = self.encoder_rnn(packed_input, (h_init, c_init))
+            _, (hidden, _) = self.encoder_rnn(packed_input, (h_init, c_init))
         else:
             _, hidden = self.encoder_rnn(packed_input)
 
@@ -129,6 +129,39 @@ class SentenceVAE(nn.Module):
 
         return logp, mean, logv, z
 
+    def encode(self, input_sequence, length):
+        batch_size = input_sequence.size(0)
+        sorted_lengths, sorted_idx = torch.sort(length, descending=True)
+        input_sequence = input_sequence[sorted_idx]
+
+        # ENCODER
+        input_embedding = self.embedding(input_sequence)
+
+        packed_input = rnn_utils.pack_padded_sequence(input_embedding, sorted_lengths.data.tolist(), batch_first=True)
+
+        if self.rnn_type == 'lstm':
+            # hidden/cell: hidden_factor X batch_size X hidden_size
+            h_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+            c_init = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+            _, (hidden, _) = self.encoder_rnn(packed_input, (h_init, c_init))
+        else:
+            _, hidden = self.encoder_rnn(packed_input)
+
+        if self.bidirectional or self.num_layers > 1:
+            # flatten hidden state
+            hidden = hidden.view(batch_size, self.hidden_size*self.hidden_factor)
+            # torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1)
+        else:
+            # gets rid of dimensions if it's 1 (only when not bidirectional)
+            hidden = hidden.squeeze()
+
+        # REPARAMETERIZATION
+        mean = self.hidden2mean(hidden)
+        logv = self.hidden2logv(hidden)
+        std = torch.exp(0.5 * logv)
+
+        return mean, std
+
     def inference(self, n=4, z=None):
 
         if z is None:
@@ -155,6 +188,10 @@ class SentenceVAE(nn.Module):
 
         generations = self.tensor(batch_size, self.max_sequence_length).fill_(self.pad_idx).long()
 
+        # Initialize the cell state
+        if self.rnn_type == 'lstm':
+            cell = to_var(torch.zeros(self.num_layers, batch_size, self.hidden_size))
+
         t = 0
         while t < self.max_sequence_length and len(running_seqs) > 0:
 
@@ -166,8 +203,7 @@ class SentenceVAE(nn.Module):
             input_embedding = self.embedding(input_sequence)
 
             if self.rnn_type == 'lstm':
-                c_init = to_var(torch.zeros(self.num_layers, len(running_seqs), self.hidden_size))
-                output, (hidden, _) = self.decoder_rnn(input_embedding, (hidden, c_init))
+                output, (hidden, cell) = self.decoder_rnn(input_embedding, (hidden, cell))
             else:
                 output, hidden = self.decoder_rnn(input_embedding, hidden) # BREAKS FOR LSTM
 
@@ -190,6 +226,8 @@ class SentenceVAE(nn.Module):
             if len(running_seqs) > 0:
                 input_sequence = input_sequence[running_seqs]
                 hidden = hidden[:, running_seqs]
+                if self.rnn_type == 'lstm':
+                    cell = cell[:, running_seqs]
 
                 running_seqs = torch.arange(0, len(running_seqs), out=self.tensor()).long()
 

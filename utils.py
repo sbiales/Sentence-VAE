@@ -2,6 +2,7 @@ import torch
 import numpy as np
 from torch.autograd import Variable
 from collections import defaultdict, Counter, OrderedDict
+from nltk.tokenize import TweetTokenizer
 
 
 class OrderedCounter(Counter, OrderedDict):
@@ -28,6 +29,13 @@ def idx2word(idx, i2w, pad_idx):
             sent_str[i] += i2w[str(word_id.item())] + " "
         sent_str[i] = sent_str[i].strip()
     return sent_str
+
+
+def tokenize(text, w2i, max_sequence_length):
+    tokenizer = TweetTokenizer(preserve_case=False)
+    words = ['<sos>'] + tokenizer.tokenize(text) + ['<eos>']
+    words.extend(['<pad>'] * (max_sequence_length-len(words)))
+    return [w2i.get(w, w2i['<unk>']) for w in words]
 
 
 def interpolate(start, end, steps):
