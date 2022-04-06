@@ -52,7 +52,7 @@ def main(args):
     print('-------INTERPOLATION-------')
     print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')'''
 
-    # Test with the examples given by Table 7 in the paper
+    # Sample from the examples given by Table 7 in the paper
     texts = ['we looked out at the setting sun.', 'i went to the kitchen.', 'how are you doing?']
     input_sequence = {
         'input': [],
@@ -74,19 +74,45 @@ def main(args):
     mean_z = mean_z * std + mean
     mean_samples, _ = model.inference(n=1, z=mean_z)
 
-    z = to_var(torch.randn([len(texts), args.latent_size]))
-    z = z * std + mean
-
-    samples, _ = model.inference(n=args.num_samples, z=z)
-
-    print(mean_samples[1, :].unsqueeze(0).shape)
-    print(samples.shape)
     print('----------SAMPLES----------')
     for i in range(len(texts)):
+        # Get samples based on the mean/std of the input text
+        z = to_var(torch.randn([args.num_samples, args.latent_size]))
+        z = z * std[i, :] + mean[i, :]
+        samples, _ = model.inference(n=args.num_samples, z=z)
+
         print('Input:', texts[i])
         print('Mean: ', *idx2word(mean_samples[i, :].unsqueeze(0), i2w=i2w, pad_idx=w2i['<pad>']))
         print('Samples:', *idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
         print()
+
+    # Interpolate between sentences given by Table 8 in the paper
+    texts = ['he was silent for a long moment.', 'it was my turn.']
+    input_sequence = {
+        'input': [],
+        'length': []
+    }
+
+    # Arrange the text tokenizations and lengths
+    for text in texts:
+        tokenized = tokenize(text, w2i, args.max_sequence_length)
+        input_sequence['input'].append(tokenized)
+        input_sequence['length'].append(len(tokenized))
+
+    input_sequence['input'] = to_var(torch.tensor(input_sequence['input']))
+    input_sequence['length'] = to_var(torch.tensor(input_sequence['length']))
+
+    mean, std = model.encode(input_sequence['input'], input_sequence['length'])
+
+    mean_z = to_var(torch.zeros([len(texts), args.latent_size]))
+    mean_z = mean_z * std + mean
+    z1 = mean_z[0, :].cpu().detach().numpy() 
+    z2 = mean_z[1, :].cpu().detach().numpy() 
+    z = to_var(torch.from_numpy(interpolate(start=z1, end=z2, steps=4)).float())
+    samples, _ = model.inference(z=z)
+
+    print('-------INTERPOLATION-------')
+    print(*idx2word(samples, i2w=i2w, pad_idx=w2i['<pad>']), sep='\n')
 
 
 
